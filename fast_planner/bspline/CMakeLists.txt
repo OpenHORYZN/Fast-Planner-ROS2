@@ -1,40 +1,79 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.5)
 project(bspline)
 
-set(CMAKE_CXX_STANDARD 14)
+# C++ version
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
+
+# Find dependencies
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(plan_env REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(pcl_msgs REQUIRED)
 
 find_package(Eigen3 REQUIRED)
-find_package(PCL 1.7 REQUIRED)
+find_package(PCL REQUIRED)
 
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
+# Create library
+add_library(bspline
+  src/non_uniform_bspline.cpp
+)
+
+# Include directories
+target_include_directories(bspline
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${Eigen3_INCLUDE_DIRS}
+    ${PCL_INCLUDE_DIRS}
+)
+
+# Compile flags (optional, add if you want)
+target_compile_options(bspline PRIVATE -O3 -Wall -Wextra)
+
+# Link dependencies
+ament_target_dependencies(bspline
+  rclcpp
   std_msgs
+  pcl_msgs
   visualization_msgs
   plan_env
   cv_bridge
 )
 
-catkin_package(
- INCLUDE_DIRS include
- LIBRARIES bspline
- CATKIN_DEPENDS
-#  DEPENDS system_lib
+# PCL may still need linking manually
+target_link_libraries(bspline
+  ${PCL_LIBRARIES}
 )
 
-include_directories( 
-    SYSTEM 
-    include 
-    ${catkin_INCLUDE_DIRS}
-    ${Eigen3_INCLUDE_DIRS} 
-    ${PCL_INCLUDE_DIRS}
+# Install targets and headers
+install(TARGETS bspline
+  EXPORT export_bspline
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
-set(CMAKE_CXX_FLAGS "-std=c++11 ${CMAKE_CXX_FLAGS} -O3 -Wall")
+install(DIRECTORY include/
+  DESTINATION include
+)
 
-add_library( bspline 
-    src/non_uniform_bspline.cpp 
-    )
-target_link_libraries( bspline
-    ${catkin_LIBRARIES} 
-    )  
+# Export for downstream packages
+ament_export_dependencies(
+  rclcpp
+  std_msgs
+  visualization_msgs
+  plan_env
+  pcl_msgs
+  cv_bridge
+)
+ament_export_include_directories(include)
+
+ament_export_targets(export_bspline)
+
+# Finalize package
+ament_package()
