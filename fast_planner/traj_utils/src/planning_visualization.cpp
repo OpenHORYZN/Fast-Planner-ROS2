@@ -65,7 +65,7 @@ PlanningVisualization::PlanningVisualization(rclcpp::Node::SharedPtr& nh) {
 void PlanningVisualization::displaySphereList(const vector<Eigen::Vector3d>& list, double resolution,
                                               const Eigen::Vector4d& color, int id, int pub_id) {
   visualization_msgs::msg::Marker mk;
-  mk.header.frame_id = "world";
+  mk.header.frame_id = "map";
   mk.header.stamp    = node->now();
   mk.type            = visualization_msgs::msg::Marker::SPHERE_LIST;
   mk.action          = visualization_msgs::msg::Marker::DELETE;
@@ -101,7 +101,7 @@ void PlanningVisualization::displaySphereList(const vector<Eigen::Vector3d>& lis
 void PlanningVisualization::displayCubeList(const vector<Eigen::Vector3d>& list, double resolution,
                                             const Eigen::Vector4d& color, int id, int pub_id) {
   visualization_msgs::msg::Marker mk;
-  mk.header.frame_id = "world";
+  mk.header.frame_id = "map";
   mk.header.stamp    = node->now();
   mk.type            = visualization_msgs::msg::Marker::CUBE_LIST;
   mk.action          = visualization_msgs::msg::Marker::DELETE;
@@ -139,7 +139,7 @@ void PlanningVisualization::displayLineList(const vector<Eigen::Vector3d>& list1
                                             const vector<Eigen::Vector3d>& list2, double line_width,
                                             const Eigen::Vector4d& color, int id, int pub_id) {
   visualization_msgs::msg::Marker mk;
-  mk.header.frame_id = "world";
+  mk.header.frame_id = "map";
   mk.header.stamp    = node->now();
   mk.type            = visualization_msgs::msg::Marker::LINE_LIST;
   mk.action          = visualization_msgs::msg::Marker::DELETE;

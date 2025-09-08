@@ -79,15 +79,21 @@ ObjPredictor::~ObjPredictor() {
 
 void ObjPredictor::init() {
   /* get param */
-  node_handle_->declare_parameter("prediction/obj_num", 5);
+  if (!node_handle_->has_parameter("prediction/obj_num")) {
+    node_handle_->declare_parameter<int>("prediction/obj_num", 5);
+  }
   obj_num_ = node_handle_->get_parameter("prediction/obj_num").as_int();
 
-  node_handle_->declare_parameter("prediction/lambda", 1.0);
+  if (!node_handle_->has_parameter("prediction/lambda")) {
+    node_handle_->declare_parameter<double>("prediction/lambda", 1.0);
+  }
   lambda_ = node_handle_->get_parameter("prediction/lambda").as_double();
 
-
-  node_handle_->declare_parameter("prediction/predict_rate", 1.0);
+  if (!node_handle_->has_parameter("prediction/predict_rate")) {
+    node_handle_->declare_parameter<double>("prediction/predict_rate", 1.0);
+  }
   predict_rate_ = node_handle_->get_parameter("prediction/predict_rate").as_double();
+
 
   predict_trajs_.reset(new vector<PolynomialPrediction>);
   predict_trajs_->resize(obj_num_);

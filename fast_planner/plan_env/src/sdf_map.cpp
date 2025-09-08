@@ -25,13 +25,37 @@
 
 #include "plan_env/sdf_map.h"
 #include <chrono>
+#include <rclcpp/logger.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/node.hpp>
+#include <rclcpp/time.hpp>
+#include <rclcpp/logging.hpp>
+
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 
 // #define current_img_ md_.depth_image_[image_cnt_ & 1]
 // #define last_img_ md_.depth_image_[!(image_cnt_ & 1)]
 
 using namespace std::placeholders;
+
+SDFMap::SDFMap() {
+  #ifdef USE_CUDA
+  if (cuda_sdf_map::isCudaAvailable()) {
+      cuda_processor_ = std::make_unique<cuda_sdf_map::CudaProcessor>();
+      use_cuda_ = cuda_processor_->isInitialized();
+      if (use_cuda_) {
+          RCLCPP_INFO(rclcpp::get_logger("USE_CUDA"), "CUDA acceleration enabled");
+      } else {
+          RCLCPP_WARN(rclcpp::get_logger("USE_CUDA"), "CUDA initialization failed, using CPU");
+      }
+  } else {
+      use_cuda_ = false;
+      RCLCPP_INFO(node_->get_logger(), "CUDA not available, using CPU");
+  }
+  #endif
+}
 
 void SDFMap::initMap(rclcpp::Node::SharedPtr& nh) {
   node_ = nh;
@@ -39,52 +63,82 @@ void SDFMap::initMap(rclcpp::Node::SharedPtr& nh) {
   /* get parameter */
   double x_size, y_size, z_size;
   // --- Declare parameters (with default values) ---
-  nh->declare_parameter<double>("sdf_map/resolution", -1.0);
-  nh->declare_parameter<double>("sdf_map/map_size_x", -1.0);
-  nh->declare_parameter<double>("sdf_map/map_size_y", -1.0);
-  nh->declare_parameter<double>("sdf_map/map_size_z", -1.0);
+  // doubles
+  std::vector<std::pair<std::string, double>> sdf_double_params = {
+      {"sdf_map/resolution", -1.0},
+      {"sdf_map/map_size_x", -1.0},
+      {"sdf_map/map_size_y", -1.0},
+      {"sdf_map/map_size_z", -1.0},
+      {"sdf_map/local_update_range_x", -1.0},
+      {"sdf_map/local_update_range_y", -1.0},
+      {"sdf_map/local_update_range_z", -1.0},
+      {"sdf_map/obstacles_inflation", -1.0},
+      {"sdf_map/fx", -1.0},
+      {"sdf_map/fy", -1.0},
+      {"sdf_map/cx", -1.0},
+      {"sdf_map/cy", -1.0},
+      {"sdf_map/depth_filter_tolerance", -1.0},
+      {"sdf_map/depth_filter_maxdist", -1.0},
+      {"sdf_map/depth_filter_mindist", -1.0},
+      {"sdf_map/k_depth_scaling_factor", -1.0},
+      {"sdf_map/p_hit", 0.70},
+      {"sdf_map/p_miss", 0.35},
+      {"sdf_map/p_min", 0.12},
+      {"sdf_map/p_max", 0.97},
+      {"sdf_map/p_occ", 0.80},
+      {"sdf_map/min_ray_length", -0.1},
+      {"sdf_map/max_ray_length", -0.1},
+      {"sdf_map/esdf_slice_height", -0.1},
+      {"sdf_map/visualization_truncate_height", -0.1},
+      {"sdf_map/virtual_ceil_height", -0.1},
+      {"sdf_map/local_bound_inflate", 1.0},
+      {"sdf_map/ground_height", 1.0}
+  };
 
-  nh->declare_parameter<double>("sdf_map/local_update_range_x", -1.0);
-  nh->declare_parameter<double>("sdf_map/local_update_range_y", -1.0);
-  nh->declare_parameter<double>("sdf_map/local_update_range_z", -1.0);
+  for (auto &p : sdf_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<double>("sdf_map/obstacles_inflation", -1.0);
+  // ints
+  std::vector<std::pair<std::string, int>> sdf_int_params = {
+      {"sdf_map/depth_filter_margin", -1},
+      {"sdf_map/skip_pixel", -1},
+      {"sdf_map/pose_type", 1},
+      {"sdf_map/local_map_margin", 1}
+  };
 
-  nh->declare_parameter<double>("sdf_map/fx", -1.0);
-  nh->declare_parameter<double>("sdf_map/fy", -1.0);
-  nh->declare_parameter<double>("sdf_map/cx", -1.0);
-  nh->declare_parameter<double>("sdf_map/cy", -1.0);
+  for (auto &p : sdf_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<bool>("sdf_map/use_depth_filter", true);
-  nh->declare_parameter<double>("sdf_map/depth_filter_tolerance", -1.0);
-  nh->declare_parameter<double>("sdf_map/depth_filter_maxdist", -1.0);
-  nh->declare_parameter<double>("sdf_map/depth_filter_mindist", -1.0);
-  nh->declare_parameter<int>("sdf_map/depth_filter_margin", -1);
-  nh->declare_parameter<double>("sdf_map/k_depth_scaling_factor", -1.0);
-  nh->declare_parameter<int>("sdf_map/skip_pixel", -1);
+  // bools
+  std::vector<std::pair<std::string, bool>> sdf_bool_params = {
+      {"sdf_map/use_depth_filter", true},
+      {"sdf_map/show_occ_time", false},
+      {"sdf_map/show_esdf_time", false}
+  };
 
-  nh->declare_parameter<double>("sdf_map/p_hit", 0.70);
-  nh->declare_parameter<double>("sdf_map/p_miss", 0.35);
-  nh->declare_parameter<double>("sdf_map/p_min", 0.12);
-  nh->declare_parameter<double>("sdf_map/p_max", 0.97);
-  nh->declare_parameter<double>("sdf_map/p_occ", 0.80);
+  for (auto &p : sdf_bool_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<bool>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<double>("sdf_map/min_ray_length", -0.1);
-  nh->declare_parameter<double>("sdf_map/max_ray_length", -0.1);
+  // strings
+  std::vector<std::pair<std::string, std::string>> sdf_string_params = {
+      {"sdf_map/frame_id", "world"}
+  };
 
-  nh->declare_parameter<double>("sdf_map/esdf_slice_height", -0.1);
-  nh->declare_parameter<double>("sdf_map/visualization_truncate_height", -0.1);
-  nh->declare_parameter<double>("sdf_map/virtual_ceil_height", -0.1);
+  for (auto &p : sdf_string_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<std::string>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<bool>("sdf_map/show_occ_time", false);
-  nh->declare_parameter<bool>("sdf_map/show_esdf_time", false);
-
-  nh->declare_parameter<int>("sdf_map/pose_type", 1);
-  nh->declare_parameter<std::string>("sdf_map/frame_id", "world");
-
-  nh->declare_parameter<double>("sdf_map/local_bound_inflate", 1.0);
-  nh->declare_parameter<int>("sdf_map/local_map_margin", 1);
-  nh->declare_parameter<double>("sdf_map/ground_height", 1.0);
 
   // --- Get parameters into your struct/vars ---
   nh->get_parameter("sdf_map/resolution", mp_.resolution_);
@@ -200,6 +254,7 @@ void SDFMap::initMap(rclcpp::Node::SharedPtr& nh) {
     sync_image_pose_->registerCallback(std::bind(&SDFMap::depthPoseCallback, this, std::placeholders::_1, std::placeholders::_2));
 
   } else if (mp_.pose_type_ == ODOMETRY) {
+    rclcpp::QoS odom_qos = rclcpp::QoS(10).best_effort().keep_last(5).durability_volatile();
     odom_sub_.reset(new message_filters::Subscriber<nav_msgs::msg::Odometry>(node_, "/sdf_map/odom", rmw_qos_profile_default));
 
     sync_image_odom_.reset(new message_filters::Synchronizer<SyncPolicyImageOdom>(
@@ -210,16 +265,18 @@ void SDFMap::initMap(rclcpp::Node::SharedPtr& nh) {
     
 
   // use odometry and point cloud
-
+  rclcpp::QoS cloud_qos = rclcpp::QoS(10).reliable().keep_last(10).durability_volatile();
   indep_cloud_sub_ =
       node_->create_subscription<sensor_msgs::msg::PointCloud2>("/sdf_map/cloud", 10, std::bind(&SDFMap::cloudCallback, this, std::placeholders::_1));
 
+  rclcpp::QoS odom_qos = rclcpp::QoS(10).best_effort().keep_last(5).durability_volatile();
   indep_odom_sub_ =
-      node_->create_subscription<nav_msgs::msg::Odometry>("/sdf_map/odom", 10, std::bind(&SDFMap::odomCallback, this, std::placeholders::_1));
+      node_->create_subscription<nav_msgs::msg::Odometry>("/sdf_map/odom", odom_qos, std::bind(&SDFMap::odomCallback, this, std::placeholders::_1));
 
-  occ_timer_ = node_->create_wall_timer(rclcpp::Duration::from_seconds(0.05).to_chrono<std::chrono::nanoseconds>(), std::bind(&SDFMap::updateOccupancyCallback, this));
-  esdf_timer_ = node_->create_wall_timer(rclcpp::Duration::from_seconds(0.05).to_chrono<std::chrono::nanoseconds>(), std::bind(&SDFMap::updateESDFCallback, this));
-  vis_timer_ = node_->create_wall_timer(rclcpp::Duration::from_seconds(0.05).to_chrono<std::chrono::nanoseconds>(), std::bind(&SDFMap::visCallback, this));
+  RCLCPP_INFO_STREAM(node_->get_logger(), "Using odometry topic: " << indep_odom_sub_->get_topic_name());
+  occ_timer_ = node_->create_wall_timer(50ms, std::bind(&SDFMap::updateOccupancyCallback, this));
+  esdf_timer_ = node_->create_wall_timer(50ms, std::bind(&SDFMap::updateESDFCallback, this));
+  vis_timer_ = node_->create_wall_timer(50ms, std::bind(&SDFMap::visCallback, this));
 
   map_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("/sdf_map/occupancy", 10);
   map_inf_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("/sdf_map/occupancy_inflate", 10);
@@ -313,106 +370,158 @@ void SDFMap::fillESDF(F_get_val f_get_val, F_set_val f_set_val, int start, int e
 }
 
 void SDFMap::updateESDF3d() {
-  Eigen::Vector3i min_esdf = md_.local_bound_min_;
-  Eigen::Vector3i max_esdf = md_.local_bound_max_;
+    auto profile_t1 = std::chrono::high_resolution_clock::now();
 
-  /* ========== compute positive DT ========== */
+    Eigen::Vector3i min_esdf = md_.local_bound_min_;
+    Eigen::Vector3i max_esdf = md_.local_bound_max_;
 
-  for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
-    for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
-      fillESDF(
-          [&](int z) {
-            return md_.occupancy_buffer_inflate_[toAddress(x, y, z)] == 1 ?
-                0 :
-                std::numeric_limits<double>::max();
-          },
-          [&](int z, double val) { md_.tmp_buffer1_[toAddress(x, y, z)] = val; }, min_esdf[2],
-          max_esdf[2], 2);
-    }
-  }
-
-  for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
-    for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
-      fillESDF([&](int y) { return md_.tmp_buffer1_[toAddress(x, y, z)]; },
-               [&](int y, double val) { md_.tmp_buffer2_[toAddress(x, y, z)] = val; }, min_esdf[1],
-               max_esdf[1], 1);
-    }
-  }
-
-  for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
-    for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
-      fillESDF([&](int x) { return md_.tmp_buffer2_[toAddress(x, y, z)]; },
-               [&](int x, double val) {
-                 md_.distance_buffer_[toAddress(x, y, z)] = mp_.resolution_ * std::sqrt(val);
-                 //  min(mp_.resolution_ * std::sqrt(val),
-                 //      md_.distance_buffer_[toAddress(x, y, z)]);
-               },
-               min_esdf[0], max_esdf[0], 0);
-    }
-  }
-
-  /* ========== compute negative distance ========== */
-  for (int x = min_esdf(0); x <= max_esdf(0); ++x)
-    for (int y = min_esdf(1); y <= max_esdf(1); ++y)
-      for (int z = min_esdf(2); z <= max_esdf(2); ++z) {
-
-        int idx = toAddress(x, y, z);
-        if (md_.occupancy_buffer_inflate_[idx] == 0) {
-          md_.occupancy_buffer_neg[idx] = 1;
-
-        } else if (md_.occupancy_buffer_inflate_[idx] == 1) {
-          md_.occupancy_buffer_neg[idx] = 0;
-        } else {
-          RCLCPP_ERROR_ONCE(node_->get_logger(), "[compute negative distance] what?");
+    /* ========== compute positive DT ========== */
+    auto t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
+    for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
+        for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
+            fillESDF(
+                [&](int z) {
+                    return md_.occupancy_buffer_inflate_[toAddress(x, y, z)] == 1 ?
+                        0 :
+                        std::numeric_limits<double>::max();
+                },
+                [&](int z, double val) { md_.tmp_buffer1_[toAddress(x, y, z)] = val; },
+                min_esdf[2], max_esdf[2], 2
+            );
         }
-      }
+    }
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Positive DT X-Y loop] Time: %.3f ms", duration_ms);
 
-  rclcpp::Time t1, t2;
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
+    for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
+        for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
+            fillESDF(
+                [&](int y) { return md_.tmp_buffer1_[toAddress(x, y, z)]; },
+                [&](int y, double val) { md_.tmp_buffer2_[toAddress(x, y, z)] = val; },
+                min_esdf[1], max_esdf[1], 1
+            );
+        }
+    }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Positive DT X-Z loop] Time: %.3f ms", duration_ms);
 
-  for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
     for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
-      fillESDF(
-          [&](int z) {
-            return md_.occupancy_buffer_neg[x * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2) +
-                                            y * mp_.map_voxel_num_(2) + z] == 1 ?
-                0 :
-                std::numeric_limits<double>::max();
-          },
-          [&](int z, double val) { md_.tmp_buffer1_[toAddress(x, y, z)] = val; }, min_esdf[2],
-          max_esdf[2], 2);
+        for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
+            fillESDF(
+                [&](int x) { return md_.tmp_buffer2_[toAddress(x, y, z)]; },
+                [&](int x, double val) {
+                    md_.distance_buffer_[toAddress(x, y, z)] = mp_.resolution_ * std::sqrt(val);
+                },
+                min_esdf[0], max_esdf[0], 0
+            );
+        }
     }
-  }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Positive DT Y-Z loop] Time: %.3f ms", duration_ms);
 
-  for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
-    for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
-      fillESDF([&](int y) { return md_.tmp_buffer1_[toAddress(x, y, z)]; },
-               [&](int y, double val) { md_.tmp_buffer2_[toAddress(x, y, z)] = val; }, min_esdf[1],
-               max_esdf[1], 1);
+    /* ========== compute negative distance ========== */
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(3)
+    for (int x = min_esdf(0); x <= max_esdf(0); ++x)
+        for (int y = min_esdf(1); y <= max_esdf(1); ++y)
+            for (int z = min_esdf(2); z <= max_esdf(2); ++z) {
+                int idx = toAddress(x, y, z);
+                if (md_.occupancy_buffer_inflate_[idx] == 0) {
+                    md_.occupancy_buffer_neg[idx] = 1;
+                } else if (md_.occupancy_buffer_inflate_[idx] == 1) {
+                    md_.occupancy_buffer_neg[idx] = 0;
+                } else {
+                    #pragma omp critical
+                    {
+                        RCLCPP_ERROR_ONCE(node_->get_logger(), "[compute negative distance] unexpected value");
+                    }
+                }
+            }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Negative distance occupancy loop] Time: %.3f ms", duration_ms);
+
+    // Negative DT loops
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
+    for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
+        for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
+            fillESDF(
+                [&](int z) {
+                    return md_.occupancy_buffer_neg[toAddress(x, y, z)] == 1 ?
+                        0 :
+                        std::numeric_limits<double>::max();
+                },
+                [&](int z, double val) { md_.tmp_buffer1_[toAddress(x, y, z)] = val; },
+                min_esdf[2], max_esdf[2], 2
+            );
+        }
     }
-  }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Negative DT X-Y loop] Time: %.3f ms", duration_ms);
 
-  for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
-    for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
-      fillESDF([&](int x) { return md_.tmp_buffer2_[toAddress(x, y, z)]; },
-               [&](int x, double val) {
-                 md_.distance_buffer_neg_[toAddress(x, y, z)] = mp_.resolution_ * std::sqrt(val);
-               },
-               min_esdf[0], max_esdf[0], 0);
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
+    for (int x = min_esdf[0]; x <= max_esdf[0]; x++) {
+        for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
+            fillESDF(
+                [&](int y) { return md_.tmp_buffer1_[toAddress(x, y, z)]; },
+                [&](int y, double val) { md_.tmp_buffer2_[toAddress(x, y, z)] = val; },
+                min_esdf[1], max_esdf[1], 1
+            );
+        }
     }
-  }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Negative DT X-Z loop] Time: %.3f ms", duration_ms);
 
-  /* ========== combine pos and neg DT ========== */
-  for (int x = min_esdf(0); x <= max_esdf(0); ++x)
-    for (int y = min_esdf(1); y <= max_esdf(1); ++y)
-      for (int z = min_esdf(2); z <= max_esdf(2); ++z) {
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(2)
+    for (int y = min_esdf[1]; y <= max_esdf[1]; y++) {
+        for (int z = min_esdf[2]; z <= max_esdf[2]; z++) {
+            fillESDF(
+                [&](int x) { return md_.tmp_buffer2_[toAddress(x, y, z)]; },
+                [&](int x, double val) {
+                    md_.distance_buffer_neg_[toAddress(x, y, z)] = mp_.resolution_ * std::sqrt(val);
+                },
+                min_esdf[0], max_esdf[0], 0
+            );
+        }
+    }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Negative DT Y-Z loop] Time: %.3f ms", duration_ms);
 
-        int idx = toAddress(x, y, z);
-        md_.distance_buffer_all_[idx] = md_.distance_buffer_[idx];
+    /* ========== combine pos and neg DT ========== */
+    t_start = std::chrono::high_resolution_clock::now();
+    #pragma omp parallel for collapse(3)
+    for (int x = min_esdf(0); x <= max_esdf(0); ++x)
+        for (int y = min_esdf(1); y <= max_esdf(1); ++y)
+            for (int z = min_esdf(2); z <= max_esdf(2); ++z) {
+                int idx = toAddress(x, y, z);
+                md_.distance_buffer_all_[idx] = md_.distance_buffer_[idx];
+                if (md_.distance_buffer_neg_[idx] > 0.0)
+                    md_.distance_buffer_all_[idx] += (-md_.distance_buffer_neg_[idx] + mp_.resolution_);
+            }
+    t_end = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    RCLCPP_INFO(node_->get_logger(), "[Combine DT loop] Time: %.3f ms", duration_ms);
 
-        if (md_.distance_buffer_neg_[idx] > 0.0)
-          md_.distance_buffer_all_[idx] += (-md_.distance_buffer_neg_[idx] + mp_.resolution_);
-      }
+    auto profile_t2 = std::chrono::high_resolution_clock::now();
+    double total_duration = std::chrono::duration<double, std::milli>(profile_t2 - profile_t1).count();
+    RCLCPP_INFO(node_->get_logger(), "[Update ESDF 3D] Total Time: %.3f ms", total_duration);
 }
+
+
 
 int SDFMap::setCacheOccupancy(Eigen::Vector3d pos, int occ) {
   if (occ != 1 && occ != 0) return INVALID_IDX;
@@ -540,10 +649,10 @@ void SDFMap::projectDepthImage() {
 }
 
 void SDFMap::raycastProcess() {
-  // if (md_.proj_points_.size() == 0)
   if (md_.proj_points_cnt == 0) return;
 
-  rclcpp::Time t1, t2;
+  rclcpp::Clock clock;
+  auto start_all = clock.now();
 
   md_.raycast_num_ += 1;
 
@@ -563,23 +672,20 @@ void SDFMap::raycastProcess() {
   Eigen::Vector3d half = Eigen::Vector3d(0.5, 0.5, 0.5);
   Eigen::Vector3d ray_pt, pt_w;
 
+  auto start_proj = clock.now();
   for (int i = 0; i < md_.proj_points_cnt; ++i) {
     pt_w = md_.proj_points_[i];
 
     // set flag for projected point
-
     if (!isInMap(pt_w)) {
       pt_w = closetPointInMap(pt_w, md_.camera_pos_);
-
       length = (pt_w - md_.camera_pos_).norm();
       if (length > mp_.max_ray_length_) {
         pt_w = (pt_w - md_.camera_pos_) / length * mp_.max_ray_length_ + md_.camera_pos_;
       }
       vox_idx = setCacheOccupancy(pt_w, 0);
-
     } else {
       length = (pt_w - md_.camera_pos_).norm();
-
       if (length > mp_.max_ray_length_) {
         pt_w = (pt_w - md_.camera_pos_) / length * mp_.max_ray_length_ + md_.camera_pos_;
         vox_idx = setCacheOccupancy(pt_w, 0);
@@ -591,13 +697,11 @@ void SDFMap::raycastProcess() {
     max_x = max(max_x, pt_w(0));
     max_y = max(max_y, pt_w(1));
     max_z = max(max_z, pt_w(2));
-
     min_x = min(min_x, pt_w(0));
     min_y = min(min_y, pt_w(1));
     min_z = min(min_z, pt_w(2));
 
     // raycasting between camera center and point
-
     if (vox_idx != INVALID_IDX) {
       if (md_.flag_rayend_[vox_idx] == md_.raycast_num_) {
         continue;
@@ -607,15 +711,11 @@ void SDFMap::raycastProcess() {
     }
 
     raycaster.setInput(pt_w / mp_.resolution_, md_.camera_pos_ / mp_.resolution_);
-
     while (raycaster.step(ray_pt)) {
       Eigen::Vector3d tmp = (ray_pt + half) * mp_.resolution_;
       length = (tmp - md_.camera_pos_).norm();
 
-      // if (length < mp_.min_ray_length_) break;
-
       vox_idx = setCacheOccupancy(tmp, 0);
-
       if (vox_idx != INVALID_IDX) {
         if (md_.flag_traverse_[vox_idx] == md_.raycast_num_) {
           break;
@@ -625,12 +725,14 @@ void SDFMap::raycastProcess() {
       }
     }
   }
+  auto end_proj = clock.now();
+  RCLCPP_INFO(node_->get_logger(), "Processing %d projected points took %.3f ms", 
+              md_.proj_points_cnt, (end_proj - start_proj).seconds() * 1000.0);
 
   // determine the local bounding box for updating ESDF
   min_x = min(min_x, md_.camera_pos_(0));
   min_y = min(min_y, md_.camera_pos_(1));
   min_z = min(min_z, md_.camera_pos_(2));
-
   max_x = max(max_x, md_.camera_pos_(0));
   max_y = max(max_y, md_.camera_pos_(1));
   max_z = max(max_z, md_.camera_pos_(2));
@@ -644,23 +746,19 @@ void SDFMap::raycastProcess() {
   md_.local_bound_min_ -= esdf_inf * Eigen::Vector3i(1, 1, 0);
   boundIndex(md_.local_bound_min_);
   boundIndex(md_.local_bound_max_);
-
   md_.local_updated_ = true;
 
   // update occupancy cached in queue
+  auto start_occ = clock.now();
   Eigen::Vector3d local_range_min = md_.camera_pos_ - mp_.local_update_range_;
   Eigen::Vector3d local_range_max = md_.camera_pos_ + mp_.local_update_range_;
-
   Eigen::Vector3i min_id, max_id;
   posToIndex(local_range_min, min_id);
   posToIndex(local_range_max, max_id);
   boundIndex(min_id);
   boundIndex(max_id);
 
-  // std::cout << "cache all: " << md_.cache_voxel_.size() << std::endl;
-
   while (!md_.cache_voxel_.empty()) {
-
     Eigen::Vector3i idx = md_.cache_voxel_.front();
     int idx_ctns = toAddress(idx);
     md_.cache_voxel_.pop();
@@ -680,7 +778,7 @@ void SDFMap::raycastProcess() {
     }
 
     bool in_local = idx(0) >= min_id(0) && idx(0) <= max_id(0) && idx(1) >= min_id(1) &&
-        idx(1) <= max_id(1) && idx(2) >= min_id(2) && idx(2) <= max_id(2);
+                    idx(1) <= max_id(1) && idx(2) >= min_id(2) && idx(2) <= max_id(2);
     if (!in_local) {
       md_.occupancy_buffer_[idx_ctns] = mp_.clamp_min_log_;
     }
@@ -689,7 +787,15 @@ void SDFMap::raycastProcess() {
         std::min(std::max(md_.occupancy_buffer_[idx_ctns] + log_odds_update, mp_.clamp_min_log_),
                  mp_.clamp_max_log_);
   }
+  auto end_occ = clock.now();
+  RCLCPP_INFO(node_->get_logger(), "Occupancy update took %.3f ms", 
+              (end_occ - start_occ).seconds() * 1000.0);
+
+  auto end_all = clock.now();
+  RCLCPP_INFO(node_->get_logger(), "raycastProcess() total time: %.3f ms", 
+              (end_all - start_all).seconds() * 1000.0);
 }
+
 
 Eigen::Vector3d SDFMap::closetPointInMap(const Eigen::Vector3d& pt, const Eigen::Vector3d& camera_pt) {
   Eigen::Vector3d diff = pt - camera_pt;
@@ -827,13 +933,13 @@ void SDFMap::clearAndInflateLocalMap() {
 }
 
 void SDFMap::visCallback() {
-  publishMap();
+  //publishMap();
   publishMapInflate(false);
-  // publishUpdateRange();
-  // publishESDF();
+  //publishUpdateRange();
+  publishESDF();
 
-  // publishUnknown();
-  // publishDepth();
+  //publishUnknown();
+  //publishDepth();
 }
 
 void SDFMap::updateOccupancyCallback() {
@@ -921,100 +1027,126 @@ void SDFMap::odomCallback(const nav_msgs::msg::Odometry::ConstSharedPtr& odom) {
   md_.has_odom_ = true;
 }
 
+
 void SDFMap::cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr& img) {
+    auto t_start = std::chrono::high_resolution_clock::now();
 
-  pcl::PointCloud<pcl::PointXYZ> latest_cloud;
-  pcl::fromROSMsg(*img, latest_cloud);
+    pcl::PointCloud<pcl::PointXYZ> latest_cloud;
+    pcl::fromROSMsg(*img, latest_cloud);
 
-  md_.has_cloud_ = true;
+    md_.has_cloud_ = true;
 
-  if (!md_.has_odom_) {
-    // std::cout << "no odom!" << std::endl;
-    return;
-  }
+    if (!md_.has_odom_) return;
+    if (latest_cloud.points.size() == 0) return;
+    if (isnan(md_.camera_pos_(0)) || isnan(md_.camera_pos_(1)) || isnan(md_.camera_pos_(2))) return;
 
-  if (latest_cloud.points.size() == 0) return;
+    this->resetBuffer(md_.camera_pos_ - mp_.local_update_range_,
+                      md_.camera_pos_ + mp_.local_update_range_);
+    double max_x, max_y, max_z, min_x, min_y, min_z;
 
-  if (isnan(md_.camera_pos_(0)) || isnan(md_.camera_pos_(1)) || isnan(md_.camera_pos_(2))) return;
+#ifdef USE_CUDA
+    if (use_cuda_ && latest_cloud.points.size() > 1000) { // Use CUDA for larger point clouds
+        auto t_cuda_start = std::chrono::high_resolution_clock::now();
+        
+        // Convert occupancy buffer to std::vector<uint8_t> if needed
+        std::vector<uint8_t> occupancy_buffer_vec(md_.occupancy_buffer_inflate_.begin(), 
+                                                  md_.occupancy_buffer_inflate_.end());
+        
+        cuda_processor_->processPointCloud(
+            latest_cloud,
+            md_.camera_pos_,
+            mp_.local_update_range_,
+            mp_.resolution_,
+            mp_.obstacles_inflation_,
+            Eigen::Vector3i(mp_.map_voxel_num_(0), mp_.map_voxel_num_(1), mp_.map_voxel_num_(2)),
+            mp_.map_origin_,
+            occupancy_buffer_vec,
+            min_x, min_y, min_z,
+            max_x, max_y, max_z
+        );
+        
+        // Copy back if needed
+        std::copy(occupancy_buffer_vec.begin(), occupancy_buffer_vec.end(), 
+                  md_.occupancy_buffer_inflate_.begin());
+        
+        auto t_cuda_end = std::chrono::high_resolution_clock::now();
+        RCLCPP_INFO(node_->get_logger(), "CUDA processing time: %.3f ms",
+                    std::chrono::duration<double, std::milli>(t_cuda_end - t_cuda_start).count());
+    } else 
+#endif
+    {
+        // Your original CPU/OpenMP implementation
+        auto t_cpu_start = std::chrono::high_resolution_clock::now();
+        
+        // Initialize bounds
+        min_x = md_.camera_pos_(0); min_y = md_.camera_pos_(1); min_z = md_.camera_pos_(2);
+        max_x = md_.camera_pos_(0); max_y = md_.camera_pos_(1); max_z = md_.camera_pos_(2);
 
-  this->resetBuffer(md_.camera_pos_ - mp_.local_update_range_,
-                    md_.camera_pos_ + mp_.local_update_range_);
+        pcl::PointXYZ pt;
+        Eigen::Vector3d p3d, p3d_inf;
+        int inf_step = ceil(mp_.obstacles_inflation_ / mp_.resolution_);
+        int inf_step_z = 1;
 
-  pcl::PointXYZ pt;
-  Eigen::Vector3d p3d, p3d_inf;
+#ifdef _OPENMP
+        // Use OpenMP version if available
+        #pragma omp parallel for reduction(max:max_x,max_y,max_z) reduction(min:min_x,min_y,min_z) \
+                private(pt, p3d, p3d_inf) schedule(dynamic)
+#endif
+        for (size_t i = 0; i < latest_cloud.points.size(); ++i) {
+            pt = latest_cloud.points[i];
+            p3d(0) = pt.x; p3d(1) = pt.y; p3d(2) = pt.z;
 
-  int inf_step = ceil(mp_.obstacles_inflation_ / mp_.resolution_);
-  int inf_step_z = 1;
+            Eigen::Vector3d devi = p3d - md_.camera_pos_;
+            Eigen::Vector3i inf_pt;
 
-  double max_x, max_y, max_z, min_x, min_y, min_z;
+            if (fabs(devi(0)) < mp_.local_update_range_(0) &&
+                fabs(devi(1)) < mp_.local_update_range_(1) &&
+                fabs(devi(2)) < mp_.local_update_range_(2)) {
 
-  min_x = mp_.map_max_boundary_(0);
-  min_y = mp_.map_max_boundary_(1);
-  min_z = mp_.map_max_boundary_(2);
+                for (int x = -inf_step; x <= inf_step; ++x) {
+                    for (int y = -inf_step; y <= inf_step; ++y) {
+                        for (int z = -inf_step_z; z <= inf_step_z; ++z) {
+                            p3d_inf(0) = pt.x + x * mp_.resolution_;
+                            p3d_inf(1) = pt.y + y * mp_.resolution_;
+                            p3d_inf(2) = pt.z + z * mp_.resolution_;
 
-  max_x = mp_.map_min_boundary_(0);
-  max_y = mp_.map_min_boundary_(1);
-  max_z = mp_.map_min_boundary_(2);
+                            // Update bounds
+                            if (p3d_inf(0) > max_x) max_x = p3d_inf(0);
+                            if (p3d_inf(1) > max_y) max_y = p3d_inf(1);
+                            if (p3d_inf(2) > max_z) max_z = p3d_inf(2);
+                            if (p3d_inf(0) < min_x) min_x = p3d_inf(0);
+                            if (p3d_inf(1) < min_y) min_y = p3d_inf(1);
+                            if (p3d_inf(2) < min_z) min_z = p3d_inf(2);
 
-  for (size_t i = 0; i < latest_cloud.points.size(); ++i) {
-    pt = latest_cloud.points[i];
-    p3d(0) = pt.x, p3d(1) = pt.y, p3d(2) = pt.z;
+                            posToIndex(p3d_inf, inf_pt);
+                            if (!isInMap(inf_pt)) continue;
 
-    /* point inside update range */
-    Eigen::Vector3d devi = p3d - md_.camera_pos_;
-    Eigen::Vector3i inf_pt;
-
-    if (fabs(devi(0)) < mp_.local_update_range_(0) && fabs(devi(1)) < mp_.local_update_range_(1) &&
-        fabs(devi(2)) < mp_.local_update_range_(2)) {
-
-      /* inflate the point */
-      for (int x = -inf_step; x <= inf_step; ++x)
-        for (int y = -inf_step; y <= inf_step; ++y)
-          for (int z = -inf_step_z; z <= inf_step_z; ++z) {
-
-            p3d_inf(0) = pt.x + x * mp_.resolution_;
-            p3d_inf(1) = pt.y + y * mp_.resolution_;
-            p3d_inf(2) = pt.z + z * mp_.resolution_;
-
-            max_x = max(max_x, p3d_inf(0));
-            max_y = max(max_y, p3d_inf(1));
-            max_z = max(max_z, p3d_inf(2));
-
-            min_x = min(min_x, p3d_inf(0));
-            min_y = min(min_y, p3d_inf(1));
-            min_z = min(min_z, p3d_inf(2));
-
-            posToIndex(p3d_inf, inf_pt);
-
-            if (!isInMap(inf_pt)) continue;
-
-            int idx_inf = toAddress(inf_pt);
-
-            md_.occupancy_buffer_inflate_[idx_inf] = 1;
-          }
+                            int idx_inf = toAddress(inf_pt);
+                            md_.occupancy_buffer_inflate_[idx_inf] = 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        auto t_cpu_end = std::chrono::high_resolution_clock::now();
+        RCLCPP_INFO(node_->get_logger(), "CPU processing time: %.3f ms",
+                    std::chrono::duration<double, std::milli>(t_cpu_end - t_cpu_start).count());
     }
-  }
 
-  min_x = min(min_x, md_.camera_pos_(0));
-  min_y = min(min_y, md_.camera_pos_(1));
-  min_z = min(min_z, md_.camera_pos_(2));
+    // Apply final constraints
+    max_z = std::max(max_z, (double)mp_.ground_height_);
 
-  max_x = max(max_x, md_.camera_pos_(0));
-  max_y = max(max_y, md_.camera_pos_(1));
-  max_z = max(max_z, md_.camera_pos_(2));
-
-  max_z = max(max_z, mp_.ground_height_);
-
-  posToIndex(Eigen::Vector3d(max_x, max_y, max_z), md_.local_bound_max_);
-  posToIndex(Eigen::Vector3d(min_x, min_y, min_z), md_.local_bound_min_);
-
-  boundIndex(md_.local_bound_min_);
-  boundIndex(md_.local_bound_max_);
-
-  md_.esdf_need_update_ = true;
+    auto t_bound_start = std::chrono::high_resolution_clock::now();
+    posToIndex(Eigen::Vector3d(max_x, max_y, max_z), md_.local_bound_max_);
+    posToIndex(Eigen::Vector3d(min_x, min_y, min_z), md_.local_bound_min_);
+    boundIndex(md_.local_bound_min_);
+    boundIndex(md_.local_bound_max_);
+    md_.esdf_need_update_ = true;
 }
 
 void SDFMap::publishMap() {
+  auto t1 = std::chrono::high_resolution_clock::now();
   // pcl::PointXYZ pt;
   // pcl::PointCloud<pcl::PointXYZ> cloud;
 
@@ -1065,7 +1197,7 @@ void SDFMap::publishMap() {
 
   boundIndex(min_cut);
   boundIndex(max_cut);
-
+  
   for (int x = min_cut(0); x <= max_cut(0); ++x)
     for (int y = min_cut(1); y <= max_cut(1); ++y)
       for (int z = min_cut(2); z <= max_cut(2); ++z) {
@@ -1089,6 +1221,10 @@ void SDFMap::publishMap() {
 
   pcl::toROSMsg(cloud, cloud_msg);
   map_pub_->publish(cloud_msg);
+  auto t2 = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+  RCLCPP_INFO(node_->get_logger(), "[MAP publish]Elapsed time: %ld ms", duration);
+
 }
 
 void SDFMap::publishMapInflate(bool all_info) {
@@ -1107,21 +1243,29 @@ void SDFMap::publishMapInflate(bool all_info) {
   boundIndex(min_cut);
   boundIndex(max_cut);
 
-  for (int x = min_cut(0); x <= max_cut(0); ++x)
-    for (int y = min_cut(1); y <= max_cut(1); ++y)
-      for (int z = min_cut(2); z <= max_cut(2); ++z) {
-        if (md_.occupancy_buffer_inflate_[toAddress(x, y, z)] == 0) continue;
+  #pragma omp parallel for collapse(3)
+  for (int x = min_cut(0); x <= max_cut(0); ++x) {
+      for (int y = min_cut(1); y <= max_cut(1); ++y) {
+          for (int z = min_cut(2); z <= max_cut(2); ++z) {
+              
+              if (md_.occupancy_buffer_inflate_[toAddress(x, y, z)] == 0) continue;
 
-        Eigen::Vector3d pos;
-        indexToPos(Eigen::Vector3i(x, y, z), pos);
-        if (pos(2) > mp_.visualization_truncate_height_) continue;
+              Eigen::Vector3d pos;
+              indexToPos(Eigen::Vector3i(x, y, z), pos);
 
-        pt.x = pos(0);
-        pt.y = pos(1);
-        pt.z = pos(2);
-        cloud.push_back(pt);
+              if (pos(2) > mp_.visualization_truncate_height_) continue;
+
+              pcl::PointXYZ pt;
+              pt.x = pos(0);
+              pt.y = pos(1);
+              pt.z = pos(2);
+
+              // Safe push_back in parallel region using critical section
+              #pragma omp critical
+              cloud.push_back(pt);
+          }
       }
-
+  }
   cloud.width = cloud.points.size();
   cloud.height = 1;
   cloud.is_dense = true;
@@ -1245,23 +1389,42 @@ void SDFMap::publishESDF() {
   boundIndex(min_cut);
   boundIndex(max_cut);
 
-  for (int x = min_cut(0); x <= max_cut(0); ++x)
-    for (int y = min_cut(1); y <= max_cut(1); ++y) {
+  int num_threads = omp_get_max_threads();
+  std::vector<pcl::PointCloud<pcl::PointXYZI>> local_clouds(num_threads);
 
-      Eigen::Vector3d pos;
-      indexToPos(Eigen::Vector3i(x, y, 1), pos);
-      pos(2) = mp_.esdf_slice_height_;
+  #pragma omp parallel
+  {
+      int tid = omp_get_thread_num();
+      auto &local_cloud = local_clouds[tid];
+      pcl::PointXYZI pt;
 
-      dist = getDistance(pos);
-      dist = min(dist, max_dist);
-      dist = max(dist, min_dist);
+      #pragma omp for collapse(2) nowait
+      for (int x = min_cut(0); x <= max_cut(0); ++x) {
+          for (int y = min_cut(1); y <= max_cut(1); ++y) {
 
-      pt.x = pos(0);
-      pt.y = pos(1);
-      pt.z = -0.2;
-      pt.intensity = (dist - min_dist) / (max_dist - min_dist);
-      cloud.push_back(pt);
-    }
+              Eigen::Vector3d pos;
+              indexToPos(Eigen::Vector3i(x, y, 1), pos);
+              pos(2) = mp_.esdf_slice_height_;
+
+              double dist = getDistance(pos);
+              dist = std::min(dist, max_dist);
+              dist = std::max(dist, min_dist);
+
+              pt.x = pos(0);
+              pt.y = pos(1);
+              pt.z = -0.2;
+              pt.intensity = (dist - min_dist) / (max_dist - min_dist);
+
+              local_cloud.push_back(pt);
+          }
+      }
+  }
+
+  // Merge all thread-local clouds
+  for (const auto &lc : local_clouds) {
+      cloud += lc; // pcl::PointCloud supports += operator
+  }
+
 
   cloud.width = cloud.points.size();
   cloud.height = 1;

@@ -22,6 +22,15 @@ find_package(plan_env REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 
+find_package(OpenMP REQUIRED)
+
+# Enable CUDA language if available
+enable_language(CUDA OPTIONAL)
+
+# Find CUDA toolkit
+find_package(CUDAToolkit REQUIRED)
+
+
 # Manually find NLOPT (since it's not a ROS 2 package)
 set(NLOPT_INCLUDE_DIR "/usr/local/include")
 set(NLOPT_LIBRARY "/usr/local/lib/libnlopt.so")

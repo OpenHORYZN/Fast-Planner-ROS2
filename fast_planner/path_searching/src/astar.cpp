@@ -204,11 +204,29 @@ int Astar::search(Eigen::Vector3d start_pt, Eigen::Vector3d end_pt, bool dynamic
 
 void Astar::setParam(rclcpp::Node::SharedPtr& nh) {
   // ===== Declare parameters =====
-  nh->declare_parameter<double>("astar/resolution_astar", -1.0);
-  nh->declare_parameter<double>("astar/time_resolution", -1.0);
-  nh->declare_parameter<double>("astar/lambda_heu", -1.0);
-  nh->declare_parameter<double>("astar/margin", -1.0);
-  nh->declare_parameter<int>("astar/allocate_num", -1);
+  std::vector<std::pair<std::string, double>> astar_double_params = {
+      {"astar/resolution_astar", -1.0},
+      {"astar/time_resolution", -1.0},
+      {"astar/lambda_heu", -1.0},
+      {"astar/margin", -1.0}
+  };
+
+  for (auto &p : astar_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, int>> astar_int_params = {
+      {"astar/allocate_num", -1}
+  };
+
+  for (auto &p : astar_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
+
 
   // ===== Get parameters =====
   resolution_    = nh->get_parameter("astar/resolution_astar").as_double();

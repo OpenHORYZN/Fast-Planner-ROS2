@@ -28,9 +28,15 @@
 #include "plan_manage_msgs/msg/bspline.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "visualization_msgs/msg/marker.hpp"
+#include <rclcpp/executors.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
+#include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 #include <chrono>
 #include <geometry_msgs/msg/detail/twist_stamped__struct.hpp>
 #include <mavros_msgs/msg/detail/position_target__struct.hpp>
+#include <nav_msgs/msg/detail/odometry__struct.hpp>
 #include <plan_manage_msgs/msg/detail/bspline__struct.hpp>
 #include <rcl/time.h>
 #include <rclcpp/clock.hpp>
@@ -38,9 +44,15 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <geometry_msgs/msg/twist_stamped.hpp>
+#include <rclcpp/subscription.hpp>
 #include <rclcpp/utilities.hpp>
+#include <sensor_msgs/msg/detail/point_cloud2__struct.hpp>
 #include <visualization_msgs/msg/detail/marker__struct.hpp>
 #include <mavros_msgs/msg/position_target.hpp>
+
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
+#include <message_filters/sync_policies/approximate_time.h>
 
 rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr pos_cmd_pub;
 
@@ -71,7 +83,7 @@ vector<Eigen::Vector3d> traj_cmd_, traj_real_;
 void displayTrajWithColor(vector<Eigen::Vector3d> path, double resolution, Eigen::Vector4d color,
                           int id) {
   visualization_msgs::msg::Marker mk;
-  mk.header.frame_id = "world";
+  mk.header.frame_id = "map";
   mk.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
   mk.type = visualization_msgs::msg::Marker::SPHERE_LIST;
   mk.action = visualization_msgs::msg::Marker::DELETE;
@@ -109,7 +121,7 @@ void displayTrajWithColor(vector<Eigen::Vector3d> path, double resolution, Eigen
 void drawCmd(const Eigen::Vector3d& pos, const Eigen::Vector3d& vec, const int& id,
              const Eigen::Vector4d& color) {
   visualization_msgs::msg::Marker mk_state;
-  mk_state.header.frame_id = "world";
+  mk_state.header.frame_id = "map";
   mk_state.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
   mk_state.id = id;
   mk_state.type = visualization_msgs::msg::Marker::ARROW;
@@ -249,7 +261,7 @@ void cmdCallback() {
   }
 
   cmd.header.stamp = time_now;
-  cmd.header.frame_id = "world";
+  cmd.header.frame_id = "map";
 
   cmd.position.x = pos(0);
   cmd.position.y = pos(1);
@@ -262,6 +274,9 @@ void cmdCallback() {
   cmd.acceleration_or_force.x = acc(0);
   cmd.acceleration_or_force.y = acc(1);
   cmd.acceleration_or_force.z = acc(2);
+
+  cmd.coordinate_frame = mavros_msgs::msg::PositionTarget::FRAME_LOCAL_NED;
+  cmd.type_mask = mavros_msgs::msg::PositionTarget::IGNORE_YAW_RATE;
 
   cmd.yaw = yaw;
   cmd.yaw_rate = yawdot;
@@ -291,11 +306,16 @@ void cmdCallback() {
   if (traj_cmd_.size() > 10000) traj_cmd_.erase(traj_cmd_.begin(), traj_cmd_.begin() + 1000);
 }
 
+
+
+
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
+    rclcpp::executors::SingleThreadedExecutor executor;
 
     auto node = rclcpp::Node::make_shared("traj_server");
+
 
     // ---------------- Subscribers ----------------
     auto bspline_sub = node->create_subscription<plan_manage_msgs::msg::Bspline>(
@@ -310,8 +330,10 @@ int main(int argc, char** argv)
         "planning/new", rclcpp::QoS(10),
         newCallback);
 
+    
+    rclcpp::QoS odom_qos = rclcpp::QoS(10).best_effort().keep_last(5).durability_volatile();
     auto odom_sub = node->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom_world", rclcpp::QoS(50),
+        "/odom_world", odom_qos,
         odomCallbck);
 
     // ---------------- Publishers ----------------
@@ -323,6 +345,8 @@ int main(int argc, char** argv)
 
     traj_pub = node->create_publisher<visualization_msgs::msg::Marker>(
         "planning/travel_traj", 10);
+
+    
 
     // ---------------- Timers ----------------
     auto cmd_timer = node->create_wall_timer(
@@ -354,7 +378,9 @@ int main(int argc, char** argv)
 
     RCLCPP_INFO(node->get_logger(), "[Traj server]: ready.");
 
+    // Add nodes to the executor
     rclcpp::spin(node);
+
 
     rclcpp::shutdown();
     return 0;

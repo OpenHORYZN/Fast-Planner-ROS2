@@ -41,19 +41,45 @@ void TopologyPRM::init(rclcpp::Node::SharedPtr& nh) {
 
   // init parameter
   // ===== Declare parameters =====
-  nh->declare_parameter<double>("topo_prm/sample_inflate_x", -1.0);
-  nh->declare_parameter<double>("topo_prm/sample_inflate_y", -1.0);
-  nh->declare_parameter<double>("topo_prm/sample_inflate_z", -1.0);
+  std::vector<std::pair<std::string, double>> topo_double_params = {
+      {"topo_prm/sample_inflate_x", -1.0},
+      {"topo_prm/sample_inflate_y", -1.0},
+      {"topo_prm/sample_inflate_z", -1.0},
+      {"topo_prm/clearance", -1.0},
+      {"topo_prm/ratio_to_short", -1.0},
+      {"topo_prm/max_sample_time", -1.0}
+  };
 
-  nh->declare_parameter<double>("topo_prm/clearance", -1.0);
-  nh->declare_parameter<int>("topo_prm/short_cut_num", -1);
-  nh->declare_parameter<int>("topo_prm/reserve_num", -1);
-  nh->declare_parameter<double>("topo_prm/ratio_to_short", -1.0);
-  nh->declare_parameter<int>("topo_prm/max_sample_num", -1);
-  nh->declare_parameter<double>("topo_prm/max_sample_time", -1.0);
-  nh->declare_parameter<int>("topo_prm/max_raw_path", -1);
-  nh->declare_parameter<int>("topo_prm/max_raw_path2", -1);
-  nh->declare_parameter<bool>("topo_prm/parallel_shortcut", false);
+  for (auto &p : topo_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, int>> topo_int_params = {
+      {"topo_prm/short_cut_num", -1},
+      {"topo_prm/reserve_num", -1},
+      {"topo_prm/max_sample_num", -1},
+      {"topo_prm/max_raw_path", -1},
+      {"topo_prm/max_raw_path2", -1}
+  };
+
+  for (auto &p : topo_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, bool>> topo_bool_params = {
+      {"topo_prm/parallel_shortcut", false}
+  };
+
+  for (auto &p : topo_bool_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<bool>(p.first, p.second);
+      }
+  }
+
 
   // ===== Get parameters =====
   sample_inflate_(0) = nh->get_parameter("topo_prm/sample_inflate_x").as_double();

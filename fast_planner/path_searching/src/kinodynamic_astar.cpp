@@ -326,19 +326,46 @@ void KinodynamicAstar::setParam(rclcpp::Node::SharedPtr& nh)
   double vel_margin;
 
     // ===== Declare parameters =====
-  nh->declare_parameter<double>("search/max_tau", -1.0);
-  nh->declare_parameter<double>("search/init_max_tau", -1.0);
-  nh->declare_parameter<double>("search/max_vel", -1.0);
-  nh->declare_parameter<double>("search/max_acc", -1.0);
-  nh->declare_parameter<double>("search/w_time", -1.0);
-  nh->declare_parameter<double>("search/horizon", -1.0);
-  nh->declare_parameter<double>("search/resolution_astar", -1.0);
-  nh->declare_parameter<double>("search/time_resolution", -1.0);
-  nh->declare_parameter<double>("search/lambda_heu", -1.0);
-  nh->declare_parameter<int>("search/allocate_num", -1);
-  nh->declare_parameter<int>("search/check_num", -1);
-  nh->declare_parameter<bool>("search/optimistic", true);
-  nh->declare_parameter<double>("search/vel_margin", 0.0);
+  std::vector<std::pair<std::string, double>> search_double_params = {
+      {"search/max_tau", -1.0},
+      {"search/init_max_tau", -1.0},
+      {"search/max_vel", -1.0},
+      {"search/max_acc", -1.0},
+      {"search/w_time", -1.0},
+      {"search/horizon", -1.0},
+      {"search/resolution_astar", -1.0},
+      {"search/time_resolution", -1.0},
+      {"search/lambda_heu", -1.0},
+      {"search/vel_margin", 0.0}
+  };
+
+  for (auto &p : search_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, int>> search_int_params = {
+      {"search/allocate_num", -1},
+      {"search/check_num", -1}
+  };
+
+  for (auto &p : search_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, bool>> search_bool_params = {
+      {"search/optimistic", true}
+  };
+
+  for (auto &p : search_bool_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<bool>(p.first, p.second);
+      }
+  }
+
 
   // ===== Get parameters =====
   max_tau_          = nh->get_parameter("search/max_tau").as_double();

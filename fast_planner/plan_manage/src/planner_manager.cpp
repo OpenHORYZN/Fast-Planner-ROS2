@@ -45,40 +45,50 @@ void FastPlannerManager::initPlanModules(rclcpp::Node::SharedPtr& nh) {
 
   bool use_geometric_path, use_kinodynamic_path, use_topo_path, use_optimization, use_active_perception;
 
-  nh->declare_parameter<double>("manager/max_vel", -1.0);
-  nh->get_parameter("manager/max_vel", pp_.max_vel_);
+  // Doubles
+  std::vector<std::pair<std::string, double*>> manager_double_params = {
+      {"manager/max_vel", &pp_.max_vel_},
+      {"manager/max_acc", &pp_.max_acc_},
+      {"manager/max_jerk", &pp_.max_jerk_},
+      {"manager/clearance_threshold", &pp_.clearance_},
+      {"manager/local_segment_length", &pp_.local_traj_len_},
+      {"manager/control_points_distance", &pp_.ctrl_pt_dist}
+  };
 
-  nh->declare_parameter<double>("manager/max_acc", -1.0);
-  nh->get_parameter("manager/max_acc", pp_.max_acc_);
+  for (auto &p : manager_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, -1.0);
+      }
+      nh->get_parameter(p.first, *(p.second));
+  }
 
-  nh->declare_parameter<double>("manager/max_jerk", -1.0);
-  nh->get_parameter("manager/max_jerk", pp_.max_jerk_);
+  // Integers
+  std::vector<std::pair<std::string, int*>> manager_int_params = {
+      {"manager/dynamic_environment", &pp_.dynamic_}
+  };
 
-  nh->declare_parameter<double>("manager/clearance_threshold", -1.0);
-  nh->get_parameter("manager/clearance_threshold", pp_.clearance_);
+  for (auto &p : manager_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, -1);
+      }
+      nh->get_parameter(p.first, *(p.second));
+  }
 
-  nh->declare_parameter<double>("manager/local_segment_length", -1.0);
-  nh->get_parameter("manager/local_segment_length", pp_.local_traj_len_);
+  // Booleans
+  std::vector<std::pair<std::string, bool*>> manager_bool_params = {
+      {"manager/use_geometric_path", &use_geometric_path},
+      {"manager/use_kinodynamic_path", &use_kinodynamic_path},
+      {"manager/use_topo_path", &use_topo_path},
+      {"manager/use_optimization", &use_optimization}
+  };
 
-  nh->declare_parameter<double>("manager/control_points_distance", -1.0);
-  nh->get_parameter("manager/control_points_distance", pp_.ctrl_pt_dist);
+  for (auto &p : manager_bool_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<bool>(p.first, false);
+      }
+      nh->get_parameter(p.first, *(p.second));
+  }
 
-  // Integer parameter
-  nh->declare_parameter<int>("manager/dynamic_environment", -1);
-  nh->get_parameter("manager/dynamic_environment", pp_.dynamic_);
-
-  // Boolean parameters
-  nh->declare_parameter<bool>("manager/use_geometric_path", false);
-  nh->get_parameter("manager/use_geometric_path", use_geometric_path);
-
-  nh->declare_parameter<bool>("manager/use_kinodynamic_path", false);
-  nh->get_parameter("manager/use_kinodynamic_path", use_kinodynamic_path);
-
-  nh->declare_parameter<bool>("manager/use_topo_path", false);
-  nh->get_parameter("manager/use_topo_path", use_topo_path);
-
-  nh->declare_parameter<bool>("manager/use_optimization", false);
-  nh->get_parameter("manager/use_optimization", use_optimization);
 
   local_data_.traj_id_ = 0;
   sdf_map_.reset(new SDFMap);

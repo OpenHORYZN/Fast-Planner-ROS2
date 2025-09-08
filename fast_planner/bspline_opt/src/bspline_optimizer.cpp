@@ -45,35 +45,49 @@ const int BsplineOptimizer::NORMAL_PHASE =
 void BsplineOptimizer::setParam(rclcpp::Node::SharedPtr& nh) {
   // ===== Declare parameters =====
   
-  nh->declare_parameter<double>("optimization/lambda1", -1.0);
-  nh->declare_parameter<double>("optimization/lambda2", -1.0);
-  nh->declare_parameter<double>("optimization/lambda3", -1.0);
-  nh->declare_parameter<double>("optimization/lambda4", -1.0);
-  nh->declare_parameter<double>("optimization/lambda5", -1.0);
-  nh->declare_parameter<double>("optimization/lambda6", -1.0);
-  nh->declare_parameter<double>("optimization/lambda7", -1.0);
-  nh->declare_parameter<double>("optimization/lambda8", -1.0);
+  std::vector<std::pair<std::string, double>> double_params = {
+      {"optimization/lambda1", -1.0},
+      {"optimization/lambda2", -1.0},
+      {"optimization/lambda3", -1.0},
+      {"optimization/lambda4", -1.0},
+      {"optimization/lambda5", -1.0},
+      {"optimization/lambda6", -1.0},
+      {"optimization/lambda7", -1.0},
+      {"optimization/lambda8", -1.0},
+      {"optimization/dist0", -1.0},
+      {"optimization/max_vel", -1.0},
+      {"optimization/max_acc", -1.0},
+      {"optimization/visib_min", -1.0},
+      {"optimization/dlmin", -1.0},
+      {"optimization/wnl", -1.0},
+      {"optimization/max_iteration_time1", -1.0},
+      {"optimization/max_iteration_time2", -1.0},
+      {"optimization/max_iteration_time3", -1.0},
+      {"optimization/max_iteration_time4", -1.0}
+  };
 
-  nh->declare_parameter<double>("optimization/dist0", -1.0);
-  nh->declare_parameter<double>("optimization/max_vel", -1.0);
-  nh->declare_parameter<double>("optimization/max_acc", -1.0);
-  nh->declare_parameter<double>("optimization/visib_min", -1.0);
-  nh->declare_parameter<double>("optimization/dlmin", -1.0);
-  nh->declare_parameter<double>("optimization/wnl", -1.0);
+  for (auto &p : double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<int>("optimization/max_iteration_num1", -1);
-  nh->declare_parameter<int>("optimization/max_iteration_num2", -1);
-  nh->declare_parameter<int>("optimization/max_iteration_num3", -1);
-  nh->declare_parameter<int>("optimization/max_iteration_num4", -1);
+  std::vector<std::pair<std::string, int>> int_params = {
+      {"optimization/max_iteration_num1", -1},
+      {"optimization/max_iteration_num2", -1},
+      {"optimization/max_iteration_num3", -1},
+      {"optimization/max_iteration_num4", -1},
+      {"optimization/algorithm1", -1},
+      {"optimization/algorithm2", -1},
+      {"optimization/order", -1}
+  };
 
-  nh->declare_parameter<double>("optimization/max_iteration_time1", -1.0);
-  nh->declare_parameter<double>("optimization/max_iteration_time2", -1.0);
-  nh->declare_parameter<double>("optimization/max_iteration_time3", -1.0);
-  nh->declare_parameter<double>("optimization/max_iteration_time4", -1.0);
+  for (auto &p : int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
 
-  nh->declare_parameter<int>("optimization/algorithm1", -1);
-  nh->declare_parameter<int>("optimization/algorithm2", -1);
-  nh->declare_parameter<int>("optimization/order", -1);
   
   // ===== Get parameters =====
   lambda1_ = nh->get_parameter("optimization/lambda1").as_double();

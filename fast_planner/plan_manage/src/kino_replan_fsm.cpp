@@ -29,6 +29,7 @@
 #include <plan_manage/kino_replan_fsm.h>
 #include <plan_manage_msgs/msg/detail/bspline__struct.hpp>
 #include <rcl/publisher.h>
+#include <rclcpp/qos.hpp>
 
 namespace fast_planner {
 
@@ -39,28 +40,44 @@ void KinoReplanFSM::init(rclcpp::Node::SharedPtr& node)
   have_target_ = false;
   have_odom_   = false;
 
+  node_ = node;
+
   // ----------------------- FSM parameters -----------------------
-  node->declare_parameter<int>("fsm/flight_type", -1);
+  // Scalars
+  if (!node->has_parameter("fsm/flight_type"))
+      node->declare_parameter<int>("fsm/flight_type", -1);
   node->get_parameter("fsm/flight_type", target_type_);
 
-  node->declare_parameter<double>("fsm/thresh_replan", -1.0);
+  if (!node->has_parameter("fsm/thresh_replan"))
+      node->declare_parameter<double>("fsm/thresh_replan", -1.0);
   node->get_parameter("fsm/thresh_replan", replan_thresh_);
 
-  node->declare_parameter<double>("fsm/thresh_no_replan", -1.0);
+  if (!node->has_parameter("fsm/thresh_no_replan"))
+      node->declare_parameter<double>("fsm/thresh_no_replan", -1.0);
   node->get_parameter("fsm/thresh_no_replan", no_replan_thresh_);
 
-  node->declare_parameter<int>("fsm/waypoint_num", -1);
+  if (!node->has_parameter("fsm/waypoint_num"))
+      node->declare_parameter<int>("fsm/waypoint_num", -1);
   node->get_parameter("fsm/waypoint_num", waypoint_num_);
 
+  // Waypoints (dynamic list)
   for (int i = 0; i < waypoint_num_; i++) {
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_x", -1.0);
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_y", -1.0);
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_z", -1.0);
+      std::string x_name = "fsm/waypoint" + std::to_string(i) + "_x";
+      std::string y_name = "fsm/waypoint" + std::to_string(i) + "_y";
+      std::string z_name = "fsm/waypoint" + std::to_string(i) + "_z";
 
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_x", waypoints_[i][0]);
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_y", waypoints_[i][1]);
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_z", waypoints_[i][2]);
+      if (!node->has_parameter(x_name))
+          node->declare_parameter<double>(x_name, -1.0);
+      if (!node->has_parameter(y_name))
+          node->declare_parameter<double>(y_name, -1.0);
+      if (!node->has_parameter(z_name))
+          node->declare_parameter<double>(z_name, -1.0);
+
+      node->get_parameter(x_name, waypoints_[i][0]);
+      node->get_parameter(y_name, waypoints_[i][1]);
+      node->get_parameter(z_name, waypoints_[i][2]);
   }
+
 
   // ----------------------- Initialize modules -----------------------
   planner_manager_.reset(new FastPlannerManager);
@@ -82,8 +99,10 @@ void KinoReplanFSM::init(rclcpp::Node::SharedPtr& node)
       "/waypoint_generator/waypoints", rclcpp::QoS(1),
       std::bind(&KinoReplanFSM::waypointCallback, this, std::placeholders::_1));
 
+  rclcpp::QoS odom_qos = rclcpp::QoS(10).best_effort().keep_last(5).durability_volatile();
+
   odom_sub_ = node->create_subscription<nav_msgs::msg::Odometry>(
-      "/odom_world", rclcpp::QoS(1),
+      "/odom_world", odom_qos,
       std::bind(&KinoReplanFSM::odometryCallback, this, std::placeholders::_1));
 
   // ----------------------- Publishers -----------------------
@@ -100,7 +119,7 @@ void KinoReplanFSM::waypointCallback(const nav_msgs::msg::Path::ConstSharedPtr& 
   trigger_ = true;
 
   if (target_type_ == TARGET_TYPE::MANUAL_TARGET) {
-    end_pt_ << msg->poses[0].pose.position.x, msg->poses[0].pose.position.y, 1.0;
+    end_pt_ << msg->poses[0].pose.position.x, msg->poses[0].pose.position.y, msg->poses[0].pose.position.z;
 
   } else if (target_type_ == TARGET_TYPE::PRESET_TARGET) {
     end_pt_(0)  = waypoints_[current_wp_][0];

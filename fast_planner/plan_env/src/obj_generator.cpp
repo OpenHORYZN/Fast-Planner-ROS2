@@ -76,17 +76,35 @@ int main(int argc, char** argv) {
   auto node = std::make_shared<rclcpp::Node>("dynamic_obj");
 
   /* ---------- initialize ---------- */
-  node->declare_parameter("obj_generator/obj_num", 10);
-  node->declare_parameter("obj_generator/xy_size", 15.0);
-  node->declare_parameter("obj_generator/h_size", 5.0);
-  node->declare_parameter("obj_generator/vel", 5.0);
-  node->declare_parameter("obj_generator/yaw_dot", 5.0);
-  node->declare_parameter("obj_generator/acc_r1", 4.0);
-  node->declare_parameter("obj_generator/acc_r2", 6.0);
-  node->declare_parameter("obj_generator/acc_z", 3.0);
-  node->declare_parameter("obj_generator/scale1", 1.5);
-  node->declare_parameter("obj_generator/scale2", 2.5);
-  node->declare_parameter("obj_generator/interval", 2.5);
+  std::vector<std::pair<std::string, int>> obj_int_params = {
+      {"obj_generator/obj_num", 10}
+  };
+
+  for (auto &p : obj_int_params) {
+      if (!node->has_parameter(p.first)) {
+          node->declare_parameter<int>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, double>> obj_double_params = {
+      {"obj_generator/xy_size", 15.0},
+      {"obj_generator/h_size", 5.0},
+      {"obj_generator/vel", 5.0},
+      {"obj_generator/yaw_dot", 5.0},
+      {"obj_generator/acc_r1", 4.0},
+      {"obj_generator/acc_r2", 6.0},
+      {"obj_generator/acc_z", 3.0},
+      {"obj_generator/scale1", 1.5},
+      {"obj_generator/scale2", 2.5},
+      {"obj_generator/interval", 2.5}
+  };
+
+  for (auto &p : obj_double_params) {
+      if (!node->has_parameter(p.first)) {
+          node->declare_parameter<double>(p.first, p.second);
+      }
+  }
+
 
   node->get_parameter("obj_generator/obj_num", obj_num);
   node->get_parameter("obj_generator/xy_size", _xy_size);
@@ -219,7 +237,7 @@ void visualizeObj(int id) {
 
   /* ---------- rviz ---------- */
   visualization_msgs::msg::Marker mk;
-  mk.header.frame_id = "world";
+  mk.header.frame_id = "map";
   mk.header.stamp = rclcpp::Clock(RCL_ROS_TIME).now();
   mk.type = visualization_msgs::msg::Marker::CUBE;
   mk.action = visualization_msgs::msg::Marker::ADD;
@@ -239,7 +257,7 @@ void visualizeObj(int id) {
 
   /* ---------- pose ---------- */
   geometry_msgs::msg::PoseStamped pose;
-  pose.header.frame_id = "world";
+  pose.header.frame_id = "map";
   pose.header.frame_id = id;
   pose.pose.position.x = pos(0), pose.pose.position.y = pos(1), pose.pose.position.z = pos(2);
   pose.pose.orientation.w = 1.0;

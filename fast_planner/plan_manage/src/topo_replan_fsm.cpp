@@ -39,30 +39,62 @@ void TopoReplanFSM::init(rclcpp::Node::SharedPtr& node)
   collide_     = false;
 
   // ----------------------- FSM parameters -----------------------
-  node->declare_parameter<int>("fsm/flight_type", -1);
-  node->get_parameter("fsm/flight_type", target_type_);
+  // Integer parameters
+  std::vector<std::pair<std::string, int*>> fsm_int_params = {
+      {"fsm/flight_type", &target_type_},
+      {"fsm/waypoint_num", &waypoint_num_}
+  };
 
-  node->declare_parameter<double>("fsm/thresh_replan", -1.0);
-  node->get_parameter("fsm/thresh_replan", replan_time_threshold_);
-
-  node->declare_parameter<double>("fsm/thresh_no_replan", -1.0);
-  node->get_parameter("fsm/thresh_no_replan", replan_distance_threshold_);
-
-  node->declare_parameter<int>("fsm/waypoint_num", -1);
-  node->get_parameter("fsm/waypoint_num", waypoint_num_);
-
-  node->declare_parameter<bool>("fsm/act_map", false);
-  node->get_parameter("fsm/act_map", act_map_);
-
-  for (int i = 0; i < waypoint_num_; i++) {
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_x", -1.0);
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_y", -1.0);
-    node->declare_parameter<double>("fsm/waypoint" + std::to_string(i) + "_z", -1.0);
-
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_x", waypoints_[i][0]);
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_y", waypoints_[i][1]);
-    node->get_parameter("fsm/waypoint" + std::to_string(i) + "_z", waypoints_[i][2]);
+  for (auto &p : fsm_int_params) {
+      if (!node->has_parameter(p.first)) {
+          node->declare_parameter<int>(p.first, -1);
+      }
+      node->get_parameter(p.first, *(p.second));
   }
+
+  // Double parameters
+  std::vector<std::pair<std::string, double*>> fsm_double_params = {
+      {"fsm/thresh_replan", &replan_time_threshold_},
+      {"fsm/thresh_no_replan", &replan_distance_threshold_}
+  };
+
+  for (auto &p : fsm_double_params) {
+      if (!node->has_parameter(p.first)) {
+          node->declare_parameter<double>(p.first, -1.0);
+      }
+      node->get_parameter(p.first, *(p.second));
+  }
+
+  // Boolean parameters
+  std::vector<std::pair<std::string, bool*>> fsm_bool_params = {
+      {"fsm/act_map", &act_map_}
+  };
+
+  for (auto &p : fsm_bool_params) {
+      if (!node->has_parameter(p.first)) {
+          node->declare_parameter<bool>(p.first, false);
+      }
+      node->get_parameter(p.first, *(p.second));
+  }
+
+  // Waypoints (dynamic array)
+  for (int i = 0; i < waypoint_num_; i++) {
+      std::string x_name = "fsm/waypoint" + std::to_string(i) + "_x";
+      std::string y_name = "fsm/waypoint" + std::to_string(i) + "_y";
+      std::string z_name = "fsm/waypoint" + std::to_string(i) + "_z";
+
+      if (!node->has_parameter(x_name))
+          node->declare_parameter<double>(x_name, -1.0);
+      if (!node->has_parameter(y_name))
+          node->declare_parameter<double>(y_name, -1.0);
+      if (!node->has_parameter(z_name))
+          node->declare_parameter<double>(z_name, -1.0);
+
+      node->get_parameter(x_name, waypoints_[i][0]);
+      node->get_parameter(y_name, waypoints_[i][1]);
+      node->get_parameter(z_name, waypoints_[i][2]);
+  }
+
 
   // ----------------------- Initialize modules -----------------------
   planner_manager_.reset(new FastPlannerManager);
@@ -84,8 +116,10 @@ void TopoReplanFSM::init(rclcpp::Node::SharedPtr& node)
       "/waypoint_generator/waypoints", rclcpp::QoS(1),
       std::bind(&TopoReplanFSM::waypointCallback, this, std::placeholders::_1));
 
+
+  rclcpp::QoS odom_qos = rclcpp::QoS(10).best_effort().keep_last(5).durability_volatile();
   odom_sub_ = node->create_subscription<nav_msgs::msg::Odometry>(
-      "/odom_world", rclcpp::QoS(1),
+      "/odom_world", odom_qos,
       std::bind(&TopoReplanFSM::odometryCallback, this, std::placeholders::_1));
 
   // ----------------------- Publishers -----------------------

@@ -16,6 +16,14 @@ find_package(cv_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
 
+# Enable CUDA language if available
+enable_language(CUDA OPTIONAL)
+
+# Find CUDA toolkit
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenMP REQUIRED)
+
+
 # Create library
 add_library(path_searching
   src/kinodynamic_astar.cpp

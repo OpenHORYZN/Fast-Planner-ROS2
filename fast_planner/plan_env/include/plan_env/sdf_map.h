@@ -26,6 +26,11 @@
 #ifndef _SDF_MAP_H
 #define _SDF_MAP_H
 
+#ifdef USE_CUDA
+#include "plan_env/cuda_sdf_map.h"
+#endif
+
+#include <omp.h>
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
 #include <cv_bridge/cv_bridge.h>
@@ -172,7 +177,7 @@ struct MappingData {
 
 class SDFMap {
 public:
-  SDFMap() {}
+  SDFMap();
   ~SDFMap() {}
 
   enum { POSE_STAMPED = 1, ODOMETRY = 2, INVALID_IDX = -10000 };
@@ -235,6 +240,13 @@ public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 private:
+
+  #ifdef USE_CUDA
+      std::unique_ptr<cuda_sdf_map::CudaProcessor> cuda_processor_;
+      bool use_cuda_;
+
+  #endif
+
   MappingParameters mp_;
   MappingData md_;
 
@@ -489,8 +501,11 @@ inline bool SDFMap::isInMap(const Eigen::Vector3i& idx) {
 }
 
 inline void SDFMap::posToIndex(const Eigen::Vector3d& pos, Eigen::Vector3i& id) {
-  for (int i = 0; i < 3; ++i) id(i) = floor((pos(i) - mp_.map_origin_(i)) * mp_.resolution_inv_);
+    id(0) = static_cast<int>(std::floor((pos(0) - mp_.map_origin_(0)) * mp_.resolution_inv_));
+    id(1) = static_cast<int>(std::floor((pos(1) - mp_.map_origin_(1)) * mp_.resolution_inv_));
+    id(2) = static_cast<int>(std::floor((pos(2) - mp_.map_origin_(2)) * mp_.resolution_inv_));
 }
+
 
 inline void SDFMap::indexToPos(const Eigen::Vector3i& id, Eigen::Vector3d& pos) {
   for (int i = 0; i < 3; ++i) pos(i) = (id(i) + 0.5) * mp_.resolution_ + mp_.map_origin_(i);

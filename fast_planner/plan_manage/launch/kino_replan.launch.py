@@ -10,21 +10,21 @@ def generate_launch_description():
         name='fast_planner_node',
         output='screen',
         remappings=[
-            ('/odom_world', '/state_ukf/odom'),
-            ('/sdf_map/odom', '/state_ukf/odom'),
-            ('/sdf_map/cloud', '/pcl_render_node/cloud'),
-            ('/sdf_map/pose', '/pcl_render_node/camera_pose'),
-            ('/sdf_map/depth', '/pcl_render_node/depth'),
+            ('/odom_world', '/mavros/local_position/odom'),
+            ('/sdf_map/odom', '/mavros/local_position/odom'),
+            ('/sdf_map/cloud', '/rgl_lidar/merged'),
+            ('/sdf_map/pose', '/none'),
+            ('/sdf_map/depth', '/none'),
         ],
         parameters=[{
             # Replanning method
             'planner_node/planner': 1,
-
+            'use_sim_time': True,
             # FSM params
             'fsm/flight_type': 1,
-            'fsm/thresh_replan': 1.5,
+            'fsm/thresh_replan': 1.0,
             'fsm/thresh_no_replan': 2.0,
-            'fsm/waypoint_num': 2,
+            'fsm/waypoint_num': 0,
             'fsm/waypoint0_x': 19.0,
             'fsm/waypoint0_y': 0.0,
             'fsm/waypoint0_z': 1.0,
@@ -37,16 +37,16 @@ def generate_launch_description():
 
             # Map parameters
             'sdf_map/resolution': 0.1,
-            'sdf_map/map_size_x': 40.0,
+            'sdf_map/map_size_x': 20.0,
             'sdf_map/map_size_y': 20.0,
             'sdf_map/map_size_z': 5.0,
-            'sdf_map/local_update_range_x': 5.5,
-            'sdf_map/local_update_range_y': 5.5,
-            'sdf_map/local_update_range_z': 4.5,
-            'sdf_map/obstacles_inflation': 0.099,
-            'sdf_map/local_bound_inflate': 0.0,
-            'sdf_map/local_map_margin': 50,
-            'sdf_map/ground_height': -1.0,
+            'sdf_map/local_update_range_x': 7.0,
+            'sdf_map/local_update_range_y': 7.0,
+            'sdf_map/local_update_range_z': 4.0,
+            'sdf_map/obstacles_inflation': 0.6,
+            'sdf_map/local_bound_inflate': 1.0,
+            'sdf_map/local_map_margin': 45,
+            'sdf_map/ground_height': -0.1,
             'sdf_map/cx': 321.04638671875,
             'sdf_map/cy': 243.44969177246094,
             'sdf_map/fx': 387.229248046875,
@@ -65,21 +65,21 @@ def generate_launch_description():
             'sdf_map/p_occ': 0.80,
             'sdf_map/min_ray_length': 0.5,
             'sdf_map/max_ray_length': 4.5,
-            'sdf_map/esdf_slice_height': 0.3,
-            'sdf_map/visualization_truncate_height': 2.49,
-            'sdf_map/virtual_ceil_height': 2.5,
+            'sdf_map/esdf_slice_height': 3.0,
+            'sdf_map/visualization_truncate_height': 10.0,
+            'sdf_map/virtual_ceil_height': 3.2,
             'sdf_map/show_occ_time': False,
             'sdf_map/show_esdf_time': False,
             'sdf_map/pose_type': 1,
-            'sdf_map/frame_id': 'world',
+            'sdf_map/frame_id': 'map',
 
             # Planner manager
-            'manager/max_vel': 3.0,
-            'manager/max_acc': 2.0,
-            'manager/max_jerk': 4.0,
+            'manager/max_vel': 0.5,
+            'manager/max_acc': 0.1,
+            'manager/max_jerk': 0.2,
             'manager/dynamic_environment': 0,
-            'manager/local_segment_length': 6.0,
-            'manager/clearance_threshold': 0.2,
+            'manager/local_segment_length': 3.0,
+            'manager/clearance_threshold': 0.5,
             'manager/control_points_distance': 0.5,
             'manager/use_geometric_path': False,
             'manager/use_kinodynamic_path': True,
@@ -89,8 +89,8 @@ def generate_launch_description():
             # Kinodynamic search
             'search/max_tau': 0.6,
             'search/init_max_tau': 0.8,
-            'search/max_vel': 3.0,
-            'search/max_acc': 2.0,
+            'search/max_vel': 0.5,
+            'search/max_acc': 0.1,
             'search/w_time': 10.0,
             'search/horizon': 7.0,
             'search/lambda_heu': 5.0,
@@ -107,8 +107,8 @@ def generate_launch_description():
             'optimization/lambda4': 0.01,
             'optimization/lambda7': 100.0,
             'optimization/dist0': 0.4,
-            'optimization/max_vel': 3.0,
-            'optimization/max_acc': 2.0,
+            'optimization/max_vel': 0.5,
+            'optimization/max_acc': 0.1,
             'optimization/algorithm1': 15,
             'optimization/algorithm2': 11,
             'optimization/max_iteration_num1': 2,
@@ -122,9 +122,9 @@ def generate_launch_description():
             'optimization/order': 3,
 
             # Bspline
-            'bspline/limit_vel': 3.0,
-            'bspline/limit_acc': 2.0,
-            'bspline/limit_ratio': 1.1,
+            'optimization/max_vel': 0.5,
+            'optimization/max_acc': 0.1,
+            'bspline/limit_ratio': 1.5,
         }]
     )
 
@@ -135,29 +135,29 @@ def generate_launch_description():
         name='traj_server',
         output='screen',
         remappings=[
-            ('/position_cmd', 'planning/pos_cmd'),
-            ('/odom_world', '/state_ukf/odom'),
+            ('/position_cmd', '/mavros/setpoint_raw/local'),
+            ('/odom_world', '/mavros/local_position/odom'),
         ],
-        parameters=[{'traj_server/time_forward': 1.5}]
+        parameters=[{'traj_server/time_forward': 1.5, 'use_sim_time': True}]
     )
 
-    # Waypoint generator node
-    waypoint_generator_node = Node(
-        package='waypoint_generator',
-        executable='waypoint_generator',
-        name='waypoint_generator',
+
+    point_utils_node = Node(
+        package='plan_manage',
+        executable='point_merge',
+        name='point_merge',
         output='screen',
-        remappings=[
-            ('~odom', '/state_ukf/odom'),
-            ('~goal', '/move_base_simple/goal'),
-            ('~traj_start_trigger', '/traj_start_trigger'),
-        ],
-        parameters=[{'waypoint_type': 'manual-lonely-waypoint'}]
+        parameters=[{
+            'left_topic': '/rgl_lidar/left/world',
+            'right_topic': '/rgl_lidar/right/world',
+            'merged_topic': '/rgl_lidar/merged'
+        }]
     )
+
 
     # Launch description
     return LaunchDescription([
         fast_planner_node,
         traj_server_node,
-        #waypoint_generator_node,
+        point_utils_node
     ])

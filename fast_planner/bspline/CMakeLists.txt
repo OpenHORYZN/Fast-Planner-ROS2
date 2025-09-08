@@ -17,6 +17,14 @@ find_package(pcl_msgs REQUIRED)
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
+find_package(OpenMP)
+
+# Enable CUDA language if available
+enable_language(CUDA OPTIONAL)
+
+# Find CUDA toolkit
+find_package(CUDAToolkit REQUIRED)
+
 
 # Create library
 add_library(bspline

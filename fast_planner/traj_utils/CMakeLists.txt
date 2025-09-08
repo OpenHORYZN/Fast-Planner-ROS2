@@ -21,6 +21,13 @@ find_package(std_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(PCL REQUIRED)
+find_package(OpenMP)
+# Enable CUDA language if available
+enable_language(CUDA OPTIONAL)
+
+# Find CUDA toolkit
+find_package(CUDAToolkit REQUIRED)
+
 
 # Build the library
 add_library(traj_utils
