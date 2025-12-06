@@ -1,3 +1,6 @@
 fast_planner/.vscode
 .vscode/
+build/
+install/
+log/
 .clang-format
