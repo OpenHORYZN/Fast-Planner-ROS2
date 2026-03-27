@@ -27,9 +27,9 @@
 #define _EDT_ENVIRONMENT_H_
 
 #include <Eigen/Eigen>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <iostream>
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <utility>
 
 #include <plan_env/obj_predictor.h>

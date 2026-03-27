@@ -29,6 +29,7 @@
 #include <plan_env/edt_environment.h>
 #include <plan_env/raycast.h>
 #include <random>
+#include <rclcpp/node.hpp>
 
 namespace fast_planner {
 
@@ -187,7 +188,7 @@ public:
   TopologyPRM(/* args */);
   ~TopologyPRM();
 
-  void init(ros::NodeHandle& nh);
+  void init(rclcpp::Node::SharedPtr& nh);
 
   void setEnvironment(const EDTEnvironment::Ptr& env);
 

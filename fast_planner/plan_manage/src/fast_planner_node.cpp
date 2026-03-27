@@ -23,8 +23,10 @@
 
 
 
-#include <ros/ros.h>
-#include <visualization_msgs/Marker.h>
+#include <rclcpp/logger.hpp>
+#include <rclcpp/logging.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include <plan_manage/kino_replan_fsm.h>
 #include <plan_manage/topo_replan_fsm.h>
@@ -37,23 +39,33 @@ backward::SignalHandling sh;
 using namespace fast_planner;
 
 int main(int argc, char** argv) {
-  ros::init(argc, argv, "fast_planner_node");
-  ros::NodeHandle nh("~");
+    rclcpp::init(argc, argv);
 
-  int planner;
-  nh.param("planner_node/planner", planner, -1);
+    // create a node
+    auto node = std::make_shared<rclcpp::Node>("planner_node");
 
-  TopoReplanFSM topo_replan;
-  KinoReplanFSM kino_replan;
+    // get parameter (declare first in ROS2)
+    int planner;
+    node->declare_parameter("planner_node/planner", -1);
+    planner = node->get_parameter("planner_node/planner").as_int();
 
-  if (planner == 1) {
-    kino_replan.init(nh);
-  } else if (planner == 2) {
-    topo_replan.init(nh);
-  }
+    TopoReplanFSM topo_replan;
+    KinoReplanFSM kino_replan;
 
-  ros::Duration(1.0).sleep();
-  ros::spin();
+    if (planner == 1) {
+        kino_replan.init(node);
+        RCLCPP_INFO(rclcpp::get_logger("START"), "Using kino replanning.");
+    } else if (planner == 2) {
+        topo_replan.init(node);
+        RCLCPP_INFO(rclcpp::get_logger("START"), "Using topo replanning.");
+    }
 
-  return 0;
+    // sleep for 1 second
+    rclcpp::sleep_for(std::chrono::seconds(1));
+
+    // spin the node
+    rclcpp::spin(node);
+
+    rclcpp::shutdown();
+    return 0;
 }

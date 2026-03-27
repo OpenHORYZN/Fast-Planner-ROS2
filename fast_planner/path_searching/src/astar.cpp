@@ -202,12 +202,41 @@ int Astar::search(Eigen::Vector3d start_pt, Eigen::Vector3d end_pt, bool dynamic
   return NO_PATH;
 }
 
-void Astar::setParam(ros::NodeHandle& nh) {
-  nh.param("astar/resolution_astar", resolution_, -1.0);
-  nh.param("astar/time_resolution", time_resolution_, -1.0);
-  nh.param("astar/lambda_heu", lambda_heu_, -1.0);
-  nh.param("astar/margin", margin_, -1.0);
-  nh.param("astar/allocate_num", allocate_num_, -1);
+void Astar::setParam(rclcpp::Node::SharedPtr& nh) {
+  // ===== Declare parameters =====
+  std::vector<std::pair<std::string, double>> astar_double_params = {
+      {"astar/resolution_astar", -1.0},
+      {"astar/time_resolution", -1.0},
+      {"astar/lambda_heu", -1.0},
+      {"astar/margin", -1.0}
+  };
+
+  for (auto &p : astar_double_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<double>(p.first, p.second);
+      }
+  }
+
+  std::vector<std::pair<std::string, int>> astar_int_params = {
+      {"astar/allocate_num", -1}
+  };
+
+  for (auto &p : astar_int_params) {
+      if (!nh->has_parameter(p.first)) {
+          nh->declare_parameter<int>(p.first, p.second);
+      }
+  }
+
+
+  // ===== Get parameters =====
+  resolution_    = nh->get_parameter("astar/resolution_astar").as_double();
+  time_resolution_ = nh->get_parameter("astar/time_resolution").as_double();
+  lambda_heu_    = nh->get_parameter("astar/lambda_heu").as_double();
+  margin_        = nh->get_parameter("astar/margin").as_double();
+  allocate_num_  = nh->get_parameter("astar/allocate_num").as_int();
+
+
+
   tie_breaker_ = 1.0 + 1.0 / 10000;
 
   cout << "margin:" << margin_ << endl;
@@ -326,6 +355,7 @@ Eigen::Vector3i Astar::posToIndex(Eigen::Vector3d pt) {
 
 int Astar::timeToIndex(double time) {
   int idx = floor((time - time_origin_) * inv_time_resolution_);
+  return idx;
 }
 
 }  // namespace fast_planner
